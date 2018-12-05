@@ -32,12 +32,18 @@ echo "
 "
 
 #RTORRENT_DEFAULT is defined in the Dockerfile to "/opt/rtorrent"
+echo $p
 user="${PIBOX_USER:-"hadopi"}"
 pass="${PIBOX_PASS:-"fuckyou"}"
 p="${RTORRENT_VOLUME:-$RTORRENT_DEFAULT}"
 sed -i "s,$RTORRENT_DEFAULT,$p,g" /etc/nginx/sites-enabled/rutorrent.conf
-sed -i "s,$RTORRENT_DEFAULT,$p,g" /root/.rtorrent.rc
+if [ ! -f "/opt/rtorrent/.rtorrent.rc" ]
+then
+  cp /rtorrent/.rtorrent.rc /opt/rtorrent/.rtorrent.rc
+fi
+sed -i "s,$RTORRENT_DEFAULT,$p,g" /opt/rtorrent/.rtorrent.rc
 
+echo "$bwhite ==> DEFAULT PATH $p $rst"
 echo
 echo "$bwhite ==> RUTORRENT setup$rst"
 
@@ -80,24 +86,21 @@ echo "$bwhite ==> SSL$rst"
 if [[ ! -e $p/ssl.key ]] || [[ ! -e $p/ssl.crt ]]
 then
     echo -n "   > Creating SSL certificate and key files... "
-    # the generated certificate is also a self-signed CA and can be added to you Trusted CA 
+    # the generated certificate is also a self-signed CA and can be added to you Trusted CA
     # in order to get a "green address bar" in your browser and avoid the ssl warning
-    openssl x509 \
-        -req -in <(
-            openssl req \
-                -days 3650 \
-                -newkey rsa:4096 \
-                -nodes \
-                -keyout "$p/ssl.key" \
-                -subj "/C=FR/L=Paris/O=Seedboxes/OU=Pibox/CN=${URL:-"localhost"}"
-            ) \
-        -signkey "$p/ssl.key" -sha256 \
+    openssl req \
         -days 3650 \
-        -extfile <(echo -e "basicConstraints=critical,CA:true,pathlen:0") \
-        -out "$p/ssl.crt"
+        -x509 \
+        -sha256 \
+        -nodes \
+        -newkey rsa:4096 \
+        -keyout "$p/ssl.key" \
+        -subj "/C=FR/L=Paris/O=Seedboxes/OU=Pibox/CN=${URL:-"localhost"}" \
+        -out "$p/ssl.crt" \
+
     show_result $?
 
-    chmod 400 $p/ssl.key
+    #chmod 600 $p/ssl.key
 else
     echo "   > A certificate file already exists... [SKIPPING]"
 fi
@@ -105,11 +108,19 @@ fi
 echo
 echo "$bwhite ==> SERVICES$rst"
 
+echo -n "   > stopping root rtorrent "
+pkill rtorrent
+show_result $?
+echo -n "   > Starting rtorrent... "
+service rtorrent start
+show_result $?
+
 echo -n "   > Starting php... "
-/etc/init.d/php5-fpm start
+/etc/init.d/php7.2-fpm start
 show_result $?
 
 echo -n "   > Starting http server... "
+nginx -t
 /etc/init.d/nginx start
 show_result $?
 
@@ -121,4 +132,5 @@ then
 else
   echo "$bred ==> PIBOX FAILED TO START :("
   echo "$red   > check above failure and ask for help if needed: https://github.com/seedboxes/pibox/issues"
+
 fi

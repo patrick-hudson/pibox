@@ -1,6 +1,6 @@
 # HADOPIBOX
 
-FROM ubuntu:trusty
+FROM ubuntu:bionic
 MAINTAINER hadopi <hadopibox@gmail.com>
 
 # env
@@ -8,33 +8,34 @@ ENV TERM xterm
 ENV DEBIAN_FRONTEND noninteractive
 ENV RTORRENT_DEFAULT /opt/rtorrent
 
-ENV RTORRENT_VERSION 0.9.2-1
-ENV RUTORRENT_VERSION 3.6
+ENV RTORRENT_VERSION 0.9.6-3build1
+ENV RUTORRENT_VERSION 3.7
 ENV H5AI_VERSION 0.27.0
 ENV CAKEBOX_VERSION v1.8.3
 
 # install tools ===============================================================
 
-RUN apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 90BD7EACED8E640A \
-        && echo 'deb http://ppa.launchpad.net/mc3man/trusty-media/ubuntu trusty main' >> /etc/apt/sources.list.d/ffmpeg.list
-
-RUN apt-get -qq --force-yes -y update 
-RUN apt-get install -y vim curl \
-        software-properties-common python-software-properties build-essential \
-        supervisor nginx php5-cli php5-fpm php5-gd \
+RUN apt-get -qq --force-yes -y update
+RUN apt-get install -y vim curl systemd \
+        software-properties-common build-essential \
+        autoconf gcc g++ libtool libncurses5-dev subversion libcurl4-openssl-dev libssl-dev irssi irssi-dev screen\
+        supervisor nginx php7.2-cli php7.2-fpm php7.2-gd libxml-libxml-perl \
         zip unzip unrar-free \
         mediainfo imagemagick ffmpeg
-
+# install autodl-irssi perl modules
+RUN  perl -MCPAN -e 'my $c = "CPAN::HandleConfig"; $c->load(doit => 1, autoconfig => 1); $c->edit(prerequisites_policy => "follow"); $c->edit(build_requires_install_policy => "yes"); $c->commit'
+RUN curl -L http://cpanmin.us | perl - App::cpanminus && \
+	cpanm HTML::Entities JSON JSON::XS
 # install rtorrent ============================================================
 
-RUN apt-get install -y rtorrent=${RTORRENT_VERSION}
+RUN apt-get install -y rtorrent
 
+RUN useradd -m -d /opt/rtorrent -m rtorrent -s "/bin/bash"
 # install rutorrent ===========================================================
 
 RUN mkdir -p /var/www \
-        && curl -sSL https://bintray.com/artifact/download/novik65/generic/rutorrent-${RUTORRENT_VERSION}.tar.gz | tar xz -C /var/www \
-        && curl -sSL https://bintray.com/artifact/download/novik65/generic/plugins-${RUTORRENT_VERSION}.tar.gz | tar xz -C /var/www/rutorrent
-
+        && curl -sSL https://codeload.github.com/Novik/ruTorrent/tar.gz/v3.8 | tar xz -C /var/www
+RUN mv /var/www/ruTorrent-3.8 /var/www/rutorrent
 # install cakebox =============================================================
 
 # first the prerequisites (composer + nodejs + bower)
@@ -43,9 +44,10 @@ RUN curl -sSL http://getcomposer.org/installer | php \
         && chmod +x /usr/bin/composer
 
 # then either install nodejs+npm from package manager (old nodejs version that doesn't include npm)
-RUN apt-get install -y nodejs npm \
-        && ln -s $(which nodejs) /usr/bin/node \
-        && npm install -g bower
+RUN curl -sL https://deb.nodesource.com/setup_10.x | bash -
+RUN apt-get install -y nodejs
+#RUN ln -s $(which nodejs) /usr/bin/node \
+RUN npm install -g bower
 # or compile nodejs only (auto include npm)
 #RUN mkdir -p /opt/nodejs && curl -sSL http://nodejs.org/dist/node-latest.tar.gz | tar xzv --strip 1 -C /opt/nodejs && cd /opt/nodejs && ./configure && make && make install
 
@@ -67,7 +69,8 @@ RUN curl -sSL http://release.larsjung.de/h5ai/h5ai-$H5AI_VERSION.zip -o /tmp/h5a
         && ln -s ${RTORRENT_DEFAULT}/share /var/www/downloads
 
 # install pure-ftpd ===========================================================
-
+RUN sed -Ei 's/^# deb-src /deb-src /' /etc/apt/sources.list
+RUN apt-get update
 # install dependencies
 RUN apt-get -y build-dep pure-ftpd
 
@@ -99,8 +102,8 @@ RUN apt-get clean \
 
 # setup =======================================================================
 
-ADD src /
-
+RUN svn co http://svn.code.sf.net/p/xmlrpc-c/code/advanced xmlrpc-c
+RUN cd xmlrpc-c && ./configure && make && make install
 # nginx
 RUN ln -s /etc/nginx/sites-available/rutorrent.conf /etc/nginx/sites-enabled \
         && rm /etc/nginx/sites-enabled/default
@@ -115,4 +118,6 @@ EXPOSE 30000-30009
 RUN useradd -m -d /home/pibox -m pibox -s "/bin/bash" \
         && chown -R pibox:pibox /var/log/supervisor
 
+ADD src/ /
+RUN chmod +x /etc/init.d/rtorrent
 CMD ["/go.sh"]
